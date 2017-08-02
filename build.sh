@@ -65,13 +65,28 @@ rm -f ./hardware_layer.cpp
 rm -f ../build_core.sh
 echo The OpenPLC needs a driver to be able to control physical or virtual hardware.
 echo Please select the driver you would like to use:
-OPTIONS="Blank Modbus Fischertechnik RaspberryPi UniPi PiXtend Arduino ESP8266 Arduino+RaspberryPi Simulink "
+OPTIONS="Blank Modbus Fischertechnik RaspberryPi UniPi PiXtend Arduino ESP8266 Arduino+RaspberryPi Simulink EtherCAT "
 select opt in $OPTIONS; do
 	if [ "$opt" = "Blank" ]; then
 		cp ./hardware_layers/blank.cpp ./hardware_layer.cpp
 		cp ./core_builders/build_normal.sh ../build_core.sh
 		echo [OPENPLC]
 		cd ..
+		./build_core.sh
+		exit
+	elif [ "$opt" = "EtherCAT" ]; then
+		cp ./hardware_layers/EtherCAT.cpp ./hardware_layer.cpp
+		cp ./core_builders/build_EtherCAT.sh ../build_core.sh
+		cd ..
+		echo [SOEM]
+		sudo rm -rf SOEM/build/
+		mkdir SOEM/build/
+		cd SOEM/build/
+		cmake ..
+		make
+		make install
+		cd ../..
+		echo [OPENPLC]
 		./build_core.sh
 		exit
 	elif [ "$opt" = "Modbus" ]; then
