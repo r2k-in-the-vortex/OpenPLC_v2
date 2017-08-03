@@ -40,6 +40,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <sstream>
 
 #include "ladder.h"
 
@@ -53,9 +54,25 @@ using namespace std;
 #define EC_TIMEOUTMON 500
 
 
-
 extern "C"
 {
+	OSAL_THREAD_FUNC ecatcheck(void *ptr);
+	void updateEtherCAT();
+	void startEtherCAT(char *ifname);
+	void initEtherCAT();
+	void getData(char *line, char *buf, char separator1, char separator2);
+	bool parseConfig();
+	struct varLink;
+
+	struct varlink{
+		int size;
+		int plclocation1;
+		int plclocation2;
+		int ecatslave;
+		int ecatbyte;
+		int ecatbit;
+	};
+	
 	boolean configured;
 	char IOmap[4096];
 	OSAL_THREAD_HANDLE thread1;
@@ -65,36 +82,38 @@ extern "C"
 	boolean inOP;
 	uint8 currentgroup = 0;
 	int num_devices = 0;		//expected count of devices
-	char ifbuf[100];		//ifname
-
+	char ifbuf[100];			//ifname
+	varlink * Ilinks;
+	varlink * Olinks;
+	int Ilinkcount;
+	int Olinkcount;
+	
+	
 	void updateEtherCAT()
 	{
 		if(!configured)return;
 		ec_send_processdata();
 		wkc = ec_receive_processdata(EC_TIMEOUTRET);
 		
-		//Digital Input
-		for (int i = 0; i < 1 * 8; i++)
-		{
-			if (bool_input[i / 8][i % 8] != NULL) {
-				*bool_input[i / 8][i % 8] = (ec_slave[0].inputs)[i];
+		for(int i = 0; i < Ilinkcount; i++){
+			if(Ilinks[i].size == 1){
+				//Boolean handling
+				if (bool_input[Ilinks[i].plclocation1 / 8][Ilinks[i].plclocation2 % 8] != NULL) {
+					*bool_input[Ilinks[i].plclocation1 / 8][Ilinks[i].plclocation2 % 8] = bitRead(*(ec_slave[Ilinks[i].ecatslave].inputs + Ilinks[i].ecatbyte), Ilinks[i].ecatbit);
+				}
 			}
 		}
 
-		//Digital Output
-		char a = 0;
-		for (int i = 0; i < 1 * 8; i++)
-		{
-			if (bool_output[i / 8][i % 8] != NULL) {
-				a |= *bool_output[i / 8][i % 8] ? 1 << i : 0x00;
+		for(int i = 0; i < Olinkcount; i++){
+			if(Olinks[i].size == 1){
+				//Boolean handling
+				if (bool_output[Olinks[i].plclocation1 / 8][Olinks[i].plclocation2 % 8] != NULL) {
+					bitWrite(*(ec_slave[Olinks[i].ecatslave].outputs + Olinks[i].ecatbyte), Olinks[i].ecatbit, *bool_output[Olinks[i].plclocation1 / 8][Olinks[i].plclocation2 % 8]);
+				}
 			}
 		}
-		*(ec_slave[0].outputs) = a;
 
 		needlf = TRUE;
-		//printf("a: %2.2x    ", a);
-		//printf("I: %2.2x    ", *(ec_slave[0].inputs));
-		//printf("O: %2.2x\n", *(ec_slave[0].outputs));
 	}
 
 	void startEtherCAT(char *ifname)
@@ -261,6 +280,7 @@ extern "C"
 
 void initEtherCAT()
 {
+	osal_thread_create(&thread1, 128000, (void*) &ecatcheck, (void*) &ctime);
 	startEtherCAT(ifbuf);
 }
 
@@ -290,6 +310,8 @@ bool parseConfig()
 {
 	string line;
 	char line_str[1024];
+	int OlinkPos = 0;
+	int IlinkPos = 0;
 	ifstream cfgfile("mbconfig.cfg");
 
 	if (cfgfile.is_open())
@@ -311,10 +333,83 @@ bool parseConfig()
 					getData(line_str, temp_buffer, '"', '"');
 					strcpy(ifbuf, temp_buffer);
 				}
+				if (!strncmp(line_str, "Icount", 6))
+				{
+					char temp_buffer[100];
+					getData(line_str, temp_buffer, '"', '"');
+					Ilinkcount = atoi(temp_buffer);
+					Ilinks = (varlink*) malloc(sizeof(varlink) * Ilinkcount);
+				}
+				if (!strncmp(line_str, "Ocount", 6))
+				{
+					char temp_buffer[100];
+					getData(line_str, temp_buffer, '"', '"');
+					Olinkcount = atoi(temp_buffer);
+					Olinks = (varlink*) malloc(sizeof(varlink) * Olinkcount);
+				}
+				if (!strncmp(line_str, "Ilink", 5))
+				{
+					char parameter[10];
+					char temp_buffer[100];
+					varlink tempLink;
+					getData(line_str, temp_buffer, '"', '"');
+					
+					stringstream ss;
+					ss << temp_buffer;
+					string toks[6];
+					ss >> toks[0] >> toks[1] >> toks[2] >> toks[3] >> toks[4] >> toks[5];
+
+					tempLink.size = atoi(toks[0].c_str());
+					tempLink.plclocation1 = atoi(toks[1].c_str());
+					tempLink.plclocation2 = atoi(toks[2].c_str());
+					tempLink.ecatslave = atoi(toks[3].c_str());
+					tempLink.ecatbyte = atoi(toks[4].c_str());
+					tempLink.ecatbit = atoi(toks[5].c_str());
+					Ilinks[IlinkPos] = tempLink;
+					printf("Ilink registered size=%d, plcInput=IX%d.%d, slave=%d, byte=%d.%d\n", 
+							Ilinks[IlinkPos].size, 
+							Ilinks[IlinkPos].plclocation1, 
+							Ilinks[IlinkPos].plclocation2, 
+							Ilinks[IlinkPos].ecatslave, 
+							Ilinks[IlinkPos].ecatbyte, 
+							Ilinks[IlinkPos].ecatbit);
+					IlinkPos++;
+				}
+				if (!strncmp(line_str, "Olink", 5))
+				{
+					char parameter[10];
+					char temp_buffer[100];
+					varlink tempLink;
+					getData(line_str, temp_buffer, '"', '"');
+					
+					stringstream ss;
+					ss << temp_buffer;
+					string toks[6];
+					ss >> toks[0] >> toks[1] >> toks[2] >> toks[3] >> toks[4] >> toks[5];
+
+					tempLink.size = atoi(toks[0].c_str());
+					tempLink.plclocation1 = atoi(toks[1].c_str());
+					tempLink.plclocation2 = atoi(toks[2].c_str());
+					tempLink.ecatslave = atoi(toks[3].c_str());
+					tempLink.ecatbyte = atoi(toks[4].c_str());
+					tempLink.ecatbit = atoi(toks[5].c_str());
+					Olinks[OlinkPos] = tempLink;
+					printf("Olink registered size=%d, plcInput=IX%d.%d, slave=%d, byte=%d.%d\n", 
+							Olinks[OlinkPos].size, 
+							Olinks[OlinkPos].plclocation1, 
+							Olinks[OlinkPos].plclocation2, 
+							Olinks[OlinkPos].ecatslave, 
+							Olinks[OlinkPos].ecatbyte, 
+							Olinks[OlinkPos].ecatbit);
+					OlinkPos++;
+				}
+				
 			}
 		}
 		printf("ifname = %s\n", ifbuf);
 		printf("Num_Devices = %d\n", num_devices);
+		printf("I links = %d\n", Ilinkcount);
+		printf("O links = %d\n", Olinkcount);
 		return true;
 	}
 	else { 
