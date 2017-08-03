@@ -1,4 +1,5 @@
 #!/bin/bash
+function version_ge() { test "$(echo "$@" | tr " " "\n" | sort -rV | head -n 1)" == "$1"; }
 echo Building OpenPLC environment:
 
 echo [MATIEC COMPILER]
@@ -79,15 +80,23 @@ select opt in $OPTIONS; do
 		cp ./core_builders/build_EtherCAT.sh ../build_core.sh
 		cd ..
 		echo [SOEM]
-		sudo rm -rf SOEM/build/
-		mkdir SOEM/build/
-		cd SOEM/build/
-		cmake ..
-		make
-		make install
-		cd ../..
-		echo [OPENPLC]
-		./build_core.sh
+		CMAKE_VERSION="$(cmake --version | head -n1 | cut -d" " -f3)"
+		echo "cmake version" ${CMAKE_VERSION}
+		if version_ge ${CMAKE_VERSION} "2.8.0"; then
+			sudo rm -rf SOEM/build/
+			mkdir SOEM/build/
+			cd SOEM/build/
+			cmake ..
+			make
+			make install
+			cd ../..
+			echo [OPENPLC]
+			./build_core.sh
+		else
+			echo "cmake version 2.8.0 or later required"
+			echo "use"
+			echo "sudo apt install cmake"
+		fi
 		exit
 	elif [ "$opt" = "Modbus" ]; then
 		cp ./hardware_layers/modbus_master.cpp ./hardware_layer.cpp
