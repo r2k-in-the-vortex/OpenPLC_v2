@@ -19,3 +19,7 @@ core/dnp3.disabled
 core/dnp3_dummy.cpp
 core/mbconfig.cfg
 core/glueVars.cpp
+st_files/blank_program_2.st
+st_files/blank_program.st
+st_files/REAL_TEST.st
+mbconfig.cfg
