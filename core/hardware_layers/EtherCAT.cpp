@@ -102,6 +102,24 @@ extern "C"
 					*bool_input[Ilinks[i].plclocation1 / 8][Ilinks[i].plclocation2 % 8] = bitRead(*(ec_slave[Ilinks[i].ecatslave].inputs + Ilinks[i].ecatbyte), Ilinks[i].ecatbit);
 				}
 			}
+			else if(Ilinks[i].size == 8){
+				//SINT handling
+				if (sint_input[Ilinks[i].plclocation1] != NULL){
+					*sint_input[Ilinks[i].plclocation1] = *(ec_slave[Ilinks[i].ecatslave].inputs + Ilinks[i].ecatbyte);
+				}
+			}
+			else if(Ilinks[i].size == 16){
+				//INT handling
+				if (int_input[Ilinks[i].plclocation1] != NULL){
+					memcpy(int_input[Ilinks[i].plclocation1], ec_slave[Ilinks[i].ecatslave].inputs + Ilinks[i].ecatbyte, 2);
+				}
+			}
+			else if(Ilinks[i].size == 32){
+				//DINT handling
+				if (dint_input[Ilinks[i].plclocation1] != NULL){
+					memcpy(dint_input[Ilinks[i].plclocation1], ec_slave[Ilinks[i].ecatslave].inputs + Ilinks[i].ecatbyte, 4);
+				}
+			}
 		}
 
 		for(int i = 0; i < Olinkcount; i++){
@@ -109,6 +127,24 @@ extern "C"
 				//Boolean handling
 				if (bool_output[Olinks[i].plclocation1 / 8][Olinks[i].plclocation2 % 8] != NULL) {
 					bitWrite(*(ec_slave[Olinks[i].ecatslave].outputs + Olinks[i].ecatbyte), Olinks[i].ecatbit, *bool_output[Olinks[i].plclocation1 / 8][Olinks[i].plclocation2 % 8]);
+				}
+			}
+			else if(Olinks[i].size == 8){
+				//SINT handling
+				if (sint_output[Olinks[i].plclocation1] != NULL) {
+					*(ec_slave[Olinks[i].ecatslave].outputs + Olinks[i].ecatbyte) = *sint_output[Olinks[i].plclocation1];
+				}
+			}
+			else if(Olinks[i].size == 16){
+				//INT handling
+				if (int_output[Olinks[i].plclocation1] != NULL) {
+					memcpy(ec_slave[Olinks[i].ecatslave].outputs + Olinks[i].ecatbyte, int_output[Olinks[i].plclocation1], 2);
+				}
+			}
+			else if(Olinks[i].size == 32){
+				//DINT handling
+				if (dint_output[Olinks[i].plclocation1] != NULL) {
+					memcpy(ec_slave[Olinks[i].ecatslave].outputs + Olinks[i].ecatbyte, dint_output[Olinks[i].plclocation1], 4);
 				}
 			}
 		}
@@ -366,8 +402,10 @@ bool parseConfig()
 					tempLink.ecatbyte = atoi(toks[4].c_str());
 					tempLink.ecatbit = atoi(toks[5].c_str());
 					Ilinks[IlinkPos] = tempLink;
-					printf("Ilink registered size=%d, plcInput=IX%d.%d, slave=%d, byte=%d.%d\n", 
+					printf("Ilink %d registered size=%d, plcInput=I%s%d.%d, slave=%d, byte=%d.%d\n", 
+							IlinkPos + 1,
 							Ilinks[IlinkPos].size, 
+							Ilinks[IlinkPos].size == 1 ? "X" : Ilinks[IlinkPos].size == 8 ? "B" : Ilinks[IlinkPos].size == 16 ? "W" : Ilinks[IlinkPos].size == 32 ? "D" : "NotSupported",
 							Ilinks[IlinkPos].plclocation1, 
 							Ilinks[IlinkPos].plclocation2, 
 							Ilinks[IlinkPos].ecatslave, 
@@ -394,8 +432,10 @@ bool parseConfig()
 					tempLink.ecatbyte = atoi(toks[4].c_str());
 					tempLink.ecatbit = atoi(toks[5].c_str());
 					Olinks[OlinkPos] = tempLink;
-					printf("Olink registered size=%d, plcInput=IX%d.%d, slave=%d, byte=%d.%d\n", 
+					printf("Olink %d registered size=%d, plcInput=I%s%d.%d, slave=%d, byte=%d.%d\n",
+							OlinkPos + 1,
 							Olinks[OlinkPos].size, 
+							Olinks[OlinkPos].size == 1 ? "X" : Olinks[OlinkPos].size == 8 ? "B" : Olinks[OlinkPos].size == 16 ? "W" : Olinks[OlinkPos].size == 32 ? "D" : "NotSupported",
 							Olinks[OlinkPos].plclocation1, 
 							Olinks[OlinkPos].plclocation2, 
 							Olinks[OlinkPos].ecatslave, 

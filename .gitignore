@@ -17,3 +17,5 @@ core/openplc
 core/hardware_layer.cpp
 core/dnp3.disabled
 core/dnp3_dummy.cpp
+core/mbconfig.cfg
+core/glueVars.cpp

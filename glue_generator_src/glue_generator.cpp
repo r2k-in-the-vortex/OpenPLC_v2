@@ -52,9 +52,17 @@ extern unsigned long long common_ticktime__;\r\n\
 IEC_BOOL *bool_input[BUFFER_SIZE][8];\r\n\
 IEC_BOOL *bool_output[BUFFER_SIZE][8];\r\n\
 \r\n\
-//Analog I/O\r\n\
+//SINT I/O\r\n\
+IEC_USINT *sint_input[BUFFER_SIZE];\r\n\
+IEC_USINT *sint_output[BUFFER_SIZE];\r\n\
+\r\n\
+//INT/Analog I/O\r\n\
 IEC_UINT *int_input[BUFFER_SIZE];\r\n\
 IEC_UINT *int_output[BUFFER_SIZE];\r\n\
+\r\n\
+//DINT I/O\r\n\
+IEC_UDINT *dint_input[BUFFER_SIZE];\r\n\
+IEC_UDINT *dint_output[BUFFER_SIZE];\r\n\
 \r\n\
 //Memory\r\n\
 IEC_UINT *int_memory[BUFFER_SIZE];\r\n\
@@ -175,8 +183,14 @@ void glueVar(char *varName, char *varType)
 			case 'X':
 				glueVars << "\tbool_input[" << pos1 << "][" << pos2 << "] = " << varName << ";\r\n";
 				break;
+			case 'B':
+				glueVars << "\tsint_input[" << pos1 << "] = " << varName << ";\r\n";
+				break;
 			case 'W':
 				glueVars << "\tint_input[" << pos1 << "] = " << varName << ";\r\n";
+				break;
+			case 'D':
+				glueVars << "\tdint_input[" << pos1 << "] = " << varName << ";\r\n";
 				break;
 		}
 	}
@@ -188,8 +202,14 @@ void glueVar(char *varName, char *varType)
 			case 'X':
 				glueVars << "\tbool_output[" << pos1 << "][" << pos2 << "] = " << varName << ";\r\n";
 				break;
+			case 'B':
+				glueVars << "\tsint_output[" << pos1 << "] = " << varName << ";\r\n";
+				break;
 			case 'W':
 				glueVars << "\tint_output[" << pos1 << "] = " << varName << ";\r\n";
+				break;
+			case 'D':
+				glueVars << "\tdint_output[" << pos1 << "] = " << varName << ";\r\n";
 				break;
 		}
 	}

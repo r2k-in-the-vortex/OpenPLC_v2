@@ -57,9 +57,17 @@ typedef double   IEC_LREAL;
 extern IEC_BOOL *bool_input[BUFFER_SIZE][8];
 extern IEC_BOOL *bool_output[BUFFER_SIZE][8];
 
-//Analog I/O
+//SINT I/O
+extern IEC_UINT *sint_input[BUFFER_SIZE];
+extern IEC_UINT *sint_output[BUFFER_SIZE];
+
+//INT/Analog I/O
 extern IEC_UINT *int_input[BUFFER_SIZE];
 extern IEC_UINT *int_output[BUFFER_SIZE];
+
+//DINT I/O
+extern IEC_UINT *dint_input[BUFFER_SIZE];
+extern IEC_UINT *dint_output[BUFFER_SIZE];
 
 //Memory
 extern IEC_UINT *int_memory[BUFFER_SIZE];
