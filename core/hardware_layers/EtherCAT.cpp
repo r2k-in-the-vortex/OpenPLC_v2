@@ -1,6 +1,15 @@
 //-----------------------------------------------------------------------------
-// Copyright 2015 Thiago Alves
+// EtherCAT driver for OpenPLC_v2
+// Copyright 2017 Rainer Kordmaa
 //
+// The EtherCAT Technology, the trade name and logo "EtherCAT" are the intellectual
+// property of, and protected by Beckhoff Automation GmbH.
+//
+// In case you did not receive a copy of the EtherCAT Master License along with
+// OpenPLC write to Beckhoff Automation GmbH, Eiserstrasse 5, D-33415 Verl, Germany
+// (www.beckhoff.com).
+//
+// Based on work by Thiago Alves and SOEM driver
 // Based on the LDmicro software by Jonathan Westhues
 // This file is part of the OpenPLC Software Stack.
 //
@@ -18,15 +27,13 @@
 // along with OpenPLC.  If not, see <http://www.gnu.org/licenses/>.
 //------
 //
-// This file is the hardware layer for the OpenPLC. If you change the platform
-// where it is running, you may only need to change this file. All the I/O
+// This file is the EtherCAT layer for the OpenPLC. If you change the platform
+// where it is running, you may only need to change this file. All the EtherCAT I/O
 // related stuff is here. Basically it provides functions to read and write
 // to the OpenPLC internal buffers in order to update I/O state.
 // Thiago Alves, Dec 2015
 //
-// Modified for EtherCAT use by Rainer Kordmaa, Aug 2017
-// more work needed here, especially updateEtherCAT() and parseConfig()
-// linking from PLC io to EtherCAT io should be defined in config file
+// Adapted for EtherCAT use by Rainer Kordmaa, Aug 2017
 //-----------------------------------------------------------------------------
 
 #include <stdio.h>
@@ -62,6 +69,7 @@ extern "C"
 	void initEtherCAT();
 	void getData(char *line, char *buf, char separator1, char separator2);
 	bool parseConfig();
+	int SDOconfig(uint16 slave);
 	struct varLink;
 
 	struct varlink{
@@ -73,6 +81,18 @@ extern "C"
 		int ecatbit;
 	};
 	
+	struct SDOwrite{
+		int slave;
+		int index;
+		int subindex;
+		bool CA;
+		int N;
+		int wordsize;
+		uint8 * data8;
+		uint16 * data16;
+		uint32 * data32;
+	};
+
 	boolean configured;
 	char IOmap[4096];
 	OSAL_THREAD_HANDLE thread1;
@@ -85,8 +105,10 @@ extern "C"
 	char ifbuf[100];			//ifname
 	varlink * Ilinks;
 	varlink * Olinks;
+	SDOwrite * SDOwrites;
 	int Ilinkcount;
 	int Olinkcount;
+	int SDOcount;
 	
 	
 	void updateEtherCAT()
@@ -170,6 +192,7 @@ extern "C"
 			if (ec_config_init(FALSE) > 0)
 			{
 				for (i = 1; i <= ec_slavecount; i++) {
+					ec_slave[i].PO2SOconfig = &SDOconfig;
 					printf("%s found at position %d\n", ec_slave[i].name, i);
 				}
 				printf("%d slaves found and configured.\n", ec_slavecount);
@@ -236,6 +259,41 @@ extern "C"
 		}
 	}
 
+	int SDOconfig(uint16 slave){
+	    int retval = 0;
+	    uint16 u16val;
+	    bool valuesWritten;
+
+	    for(int i = 0; i < SDOcount; i++){
+	    	if(SDOwrites[i].slave == slave){
+
+	    		printf("SDO write slave %d %s wordsize=%d N=%d\n", slave, ec_slave[slave].name, SDOwrites[i].wordsize, SDOwrites[i].N);
+	    		printf("Index 0x%4.4x:%2.2x CA=%s ", SDOwrites[i].index, SDOwrites[i].subindex, SDOwrites[i].CA ? "TRUE" : "FALSE");
+
+	    		valuesWritten = true;
+	    		if(SDOwrites[i].wordsize == 1){
+	    			for(int j = 0; j < SDOwrites[i].N; j++)printf("0x%2.2x ", SDOwrites[i].data8[j]);
+		    		retval += ec_SDOwrite(slave, SDOwrites[i].index, SDOwrites[i].subindex, SDOwrites[i].CA, sizeof(uint8) * SDOwrites[i].N, SDOwrites[i].data8, EC_TIMEOUTSAFE);
+	    		}
+	    		else if(SDOwrites[i].wordsize == 2){
+	    			for(int j = 0; j < SDOwrites[i].N; j++)printf("0x%4.4x ", SDOwrites[i].data16[j]);
+		    		retval += ec_SDOwrite(slave, SDOwrites[i].index, SDOwrites[i].subindex, SDOwrites[i].CA, sizeof(uint16) * SDOwrites[i].N, SDOwrites[i].data16, EC_TIMEOUTSAFE);
+	    		}
+	    		else if(SDOwrites[i].wordsize == 4){
+	    			for(int j = 0; j < SDOwrites[i].N; j++)printf("0x%8.8x ", SDOwrites[i].data32[j]);
+		    		retval += ec_SDOwrite(slave, SDOwrites[i].index, SDOwrites[i].subindex, SDOwrites[i].CA, sizeof(uint32) * SDOwrites[i].N, SDOwrites[i].data32, EC_TIMEOUTSAFE);
+	    		}
+	    		printf(" retval=%d\n", retval);
+	    	}
+	    }
+
+	    if(valuesWritten){
+		    while(EcatError) printf("%s", ec_elist2string());
+		    printf("SDO for slave %d - %s set, retval = %d\n", slave, ec_slave[slave].name, retval);
+		    return retval;
+	    }
+	    return 1;
+	}
 	OSAL_THREAD_FUNC ecatcheck(void *ptr)
 	{
 		int slave;
@@ -342,12 +400,14 @@ void getData(char *line, char *buf, char separator1, char separator2)
 		buf[j] = '\0';
 	}
 }
+
 bool parseConfig()
 {
 	string line;
 	char line_str[1024];
 	int OlinkPos = 0;
 	int IlinkPos = 0;
+	int SDOwPos = 0;
 	ifstream cfgfile("mbconfig.cfg");
 
 	if (cfgfile.is_open())
@@ -383,8 +443,19 @@ bool parseConfig()
 					Olinkcount = atoi(temp_buffer);
 					Olinks = (varlink*) malloc(sizeof(varlink) * Olinkcount);
 				}
+				if (!strncmp(line_str, "SDOcount", 8))
+				{
+					char temp_buffer[100];
+					getData(line_str, temp_buffer, '"', '"');
+					SDOcount = atoi(temp_buffer);
+					SDOwrites = (SDOwrite*) malloc(sizeof(SDOwrite) * SDOcount);
+				}
 				if (!strncmp(line_str, "Ilink", 5))
 				{
+					if(IlinkPos >= Ilinkcount){
+						printf("Specified Icount=%d is incorrect, reached Ilink no %d\n", Ilinkcount, IlinkPos);
+						return false;
+					}
 					char parameter[10];
 					char temp_buffer[100];
 					varlink tempLink;
@@ -415,6 +486,10 @@ bool parseConfig()
 				}
 				if (!strncmp(line_str, "Olink", 5))
 				{
+					if(OlinkPos >= Olinkcount){
+						printf("Specified Ocount=%d is incorrect, reached Olink no %d\n", Olinkcount, OlinkPos);
+						return false;
+					}
 					char parameter[10];
 					char temp_buffer[100];
 					varlink tempLink;
@@ -443,13 +518,62 @@ bool parseConfig()
 							Olinks[OlinkPos].ecatbit);
 					OlinkPos++;
 				}
-				
+				if (!strncmp(line_str, "SDOwrite", 8))
+				{
+					if(SDOwPos >= SDOcount){
+						printf("Specified SDOcount=%d is incorrect, reached SDOwrite no %d\n", SDOcount, SDOwPos);
+						return false;
+					}
+					char temp_buffer[100];
+					char temp_buffer2[20];
+					int slave, index, subindex, N;
+					getData(line_str, temp_buffer, '"', '"');
+
+					stringstream ss;
+					ss << temp_buffer;
+					string toks[6];
+					ss >> toks[0] >> toks[1] >> toks[2] >> toks[3] >> toks[4] >> toks[5];
+
+					SDOwrites[SDOwPos].slave = atoi(toks[0].c_str());
+					SDOwrites[SDOwPos].index = strtoul(toks[1].c_str(), NULL, 16);
+					SDOwrites[SDOwPos].subindex = strtoul(toks[2].c_str(), NULL, 16);
+					SDOwrites[SDOwPos].CA = !strncmp(toks[3].c_str(), "TRUE", 4);
+					SDOwrites[SDOwPos].N = atoi(toks[4].c_str());
+
+					SDOwrites[SDOwPos].wordsize = (strlen(toks[5].c_str()) - 2)/2;
+					printf("WORDSIZE DEBUG: N=%d len = %d, str = '%s'\n", SDOwrites[SDOwPos].N, SDOwrites[SDOwPos].wordsize, toks[5].c_str());
+					if(SDOwrites[SDOwPos].wordsize == 1){
+						SDOwrites[SDOwPos].data8 = (uint8*) malloc(sizeof(uint8) * SDOwrites[SDOwPos].N);
+					}
+					else if(SDOwrites[SDOwPos].wordsize == 2){
+						SDOwrites[SDOwPos].data16 = (uint16*) malloc(sizeof(uint16) * SDOwrites[SDOwPos].N);
+					}
+					else if(SDOwrites[SDOwPos].wordsize == 4){
+						SDOwrites[SDOwPos].data32 = (uint32*) malloc(sizeof(uint32) * SDOwrites[SDOwPos].N);
+					}
+
+					for(int i = 0; i < SDOwrites[SDOwPos].N; i++){
+						if(SDOwrites[SDOwPos].wordsize == 1){
+							SDOwrites[SDOwPos].data8[i] = strtoul(toks[5].c_str(), NULL, 16);
+						}
+						else if(SDOwrites[SDOwPos].wordsize == 2){
+							SDOwrites[SDOwPos].data16[i] = strtoul(toks[5].c_str(), NULL, 16);
+						}
+						else if(SDOwrites[SDOwPos].wordsize == 4){
+							SDOwrites[SDOwPos].data32[i] = strtoul(toks[5].c_str(), NULL, 16);
+						}
+						ss >> toks[5];
+					}
+
+					SDOwPos++;
+				}
 			}
 		}
 		printf("ifname = %s\n", ifbuf);
 		printf("Num_Devices = %d\n", num_devices);
-		printf("I links = %d\n", Ilinkcount);
-		printf("O links = %d\n", Olinkcount);
+		printf("I links = %d, %d Ilinks configured\n", Ilinkcount, IlinkPos - 1);
+		printf("O links = %d, %d Olinks configured\n", Olinkcount, OlinkPos - 1);
+		printf("SDO cnu = %d, %d SDOwrite configured\n", SDOcount, SDOwPos - 1);
 		return true;
 	}
 	else { 
